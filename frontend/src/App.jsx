@@ -6,6 +6,8 @@ import Register from './components/Register/Register';
 import Services from './pages/Service/ServicePage'; 
 import Contact from './pages/Contact/ContactPage'; 
 import About from './pages/About/AboutPage'; 
+import Account from './pages/Account/AccountPage'; 
+ 
 import Footer from './components/Footer/Footer'; 
 // import  { useState, useEffect } from 'react';
 // import axios from 'axios';
@@ -37,7 +39,10 @@ function App() {
         <Route path="/register" element={<Register />} />
         <Route path="/services" element={<Services />} />
         <Route path="/contact" element={<Contact />} />
-        <Route path="/About" element={<About />} />
+        <Route path="/about" element={<About />} />
+        <Route path="/account" element={<Account />} />
+
+
       </Routes>
       <Footer /> 
     </Router>
