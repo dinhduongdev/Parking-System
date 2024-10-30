@@ -59,7 +59,7 @@ def login():
     else:
         return jsonify({"error": "Invalid email or password"}), 401
 
-@app.route('/account', methods=['POST'])
+@app.route('/account/vallet', methods=['POST'])
 def recharge_wallet():
     try:
         # Get JSON data from request
@@ -113,7 +113,7 @@ def get_motorcycle_spots():
     return jsonify(output)
 @app.route('/oto_spots', methods=['GET'])
 def get_oto_spots():
-    spots = mongo.db.motorcycle_spots.find()  # Assuming you have a collection named 'motorcycle_spots'
+    spots = mongo.db.oto_spots.find()  # Assuming you have a collection named 'motorcycle_spots'
     output = []
     for spot in spots:
         output.append({
@@ -122,6 +122,36 @@ def get_oto_spots():
             'status': spot['status']
         })
     return jsonify(output)
+
+@app.route('/account/license_plate', methods=['POST'])
+def update_license_plate():
+    data = request.get_json()
+    username = data.get('username')
+    license_plate = data.get('license_plate')
+    print(data)
+    # Validate the input
+    if not username:
+        return jsonify({"error": "Username is required"}), 400
+    if not license_plate:
+        return jsonify({"error": "License plate is required"}), 400
+    print("Collection Name:", mongo.db.Users.name)
+    print("Database URI:", app.config["MONGO_URI"])
+    # Find the user by username
+    user = users.find_one({"username": str(username)})
+    print(user)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    # Update or add the license plate
+    users.update_one({"_id": user["_id"]}, {"$set": {"license_plate": license_plate}})
+
+    # Fetch and return the updated user information
+    updated_user = users.find_one({"_id": user["_id"]})
+    return jsonify({
+        "username": updated_user["username"],
+        "balance": updated_user.get("balance", 0),
+        "license_plate": updated_user["license_plate"],
+    })
 
 
 if __name__ == "__main__": 

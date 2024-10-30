@@ -5,7 +5,8 @@ import defaultAvatar from '../../../public/defaultAvatar.png';
 const AccountPage = () => {
   const [user, setUser] = useState(null);
   const [rechargeAmount, setRechargeAmount] = useState('');
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [licensePlate, setLicensePlate] = useState('');
+  const [modalPurpose, setModalPurpose] = useState('');
 
   useEffect(() => {
     const storedUser = localStorage.getItem('user');
@@ -14,62 +15,76 @@ const AccountPage = () => {
     }
   }, []);
 
-  // const handleEditProfile = () => {
-  //   alert("Edit Profile clicked!");
-  // };
-
-  // const handleChangePassword = () => {
-  //   alert("Change Password clicked!");
-  // };
-
   const handleLogout = () => {
     localStorage.removeItem('user');
     window.location.href = '/';
   };
 
-  const handleRechargeWallet = () => {
-    setIsModalOpen(true); // Open modal for recharge
+  const openModal = (purpose) => {
+    setModalPurpose(purpose);
   };
 
   const handleRechargeSubmit = async (e) => {
     e.preventDefault();
-  
     if (parseFloat(rechargeAmount) <= 0) {
       alert("Please enter a valid amount.");
       return;
     }
-  
-    // Log the username and amount before sending
-    console.log("Username:", user.username); // Check the username
-    console.log("Recharge Amount:", parseFloat(rechargeAmount)); // Check the amount
-  
+
     try {
-      const response = await fetch('http://127.0.0.1:5000/account', {
+      const response = await fetch('http://127.0.0.1:5000/account/vallet', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ 
-          username: user.username, // Now sending the username
-          amount: parseInt(rechargeAmount) 
+          username: user.username,
+          amount: parseInt(rechargeAmount),
         }),
       });
-  
+
       if (!response.ok) {
         throw new Error("Failed to recharge wallet");
       }
-  
+
       const updatedUser = await response.json();
-      setUser(updatedUser); // Update user state with new balance
-      localStorage.setItem('user', JSON.stringify(updatedUser)); // Update local storage
-      setRechargeAmount(''); // Reset recharge amount
-      setIsModalOpen(false); // Close modal
+      setUser(updatedUser);
+      localStorage.setItem('user', JSON.stringify(updatedUser));
+      setRechargeAmount('');
+      setModalPurpose('');
     } catch (error) {
       alert(error.message);
     }
   };
 
+  const handleUpdatePlateSubmit = async (e) => {
+    e.preventDefault();
 
+    try {
+      const response = await fetch('http://127.0.0.1:5000/account/license_plate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          username: user.username,
+          license_plate: licensePlate,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update license plate');
+      }
+
+      const updatedUser = await response.json();
+      setUser(updatedUser);
+      localStorage.setItem('user', JSON.stringify(updatedUser));
+      setLicensePlate('');
+      setModalPurpose('');
+    } catch (error) {
+      alert(error.message);
+    }
+  };
 
   return (
     <div className="min-h-screen flex bg-gray-100">
@@ -82,7 +97,7 @@ const AccountPage = () => {
             className="w-24 h-24 rounded-full mb-2"
           />
           <h2 className="text-lg font-semibold">{user?.username || "Default name"}</h2>
-          <p className="text-gray-300">Balance: ${user?.balance || '0.00'}</p> {/* Display account balance */}
+          <p className="text-gray-300">Balance: ${user?.balance || '0.00'}</p>
         </div>
 
         <nav className="space-y-4">
@@ -108,40 +123,82 @@ const AccountPage = () => {
           <h2 className="text-xl font-semibold mb-2">Wallet</h2>
           <p className="text-gray-700">Current Balance: ${user?.balance || '0.00'}</p>
           <button
-            onClick={handleRechargeWallet}
+            onClick={() => openModal('wallet')}
             className="mt-4 bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700"
           >
             Recharge Wallet
           </button>
         </section>
 
-        {/* Recharge Modal */}
-        {isModalOpen && (
+        {/* License Plate Section */}
+        <section className="mt-6 p-4 bg-white shadow rounded">
+          <h2 className="text-xl font-semibold mb-2">License Plate Number</h2>
+          <p className="text-gray-700">Current Plate: {user?.license_plate || 'Not Set'}</p>
+          <button
+            onClick={() => openModal('plate')}
+            className="mt-4 bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700"
+          >
+            Update Plate
+          </button>
+        </section>
+
+        {/* Modal */}
+        {modalPurpose && (
           <div className="fixed inset-0 flex items-center justify-center bg-gray-600 bg-opacity-50">
             <div className="bg-white p-6 rounded shadow-lg">
-              <h3 className="text-lg font-semibold mb-4">Recharge Wallet</h3>
-              <form onSubmit={handleRechargeSubmit}>
-                <input
-                  type="number"
-                  value={rechargeAmount}
-                  onChange={(e) => setRechargeAmount(e.target.value)}
-                  className="border border-gray-300 p-2 rounded w-full mb-4"
-                  placeholder="Enter amount"
-                  required
-                />
-                <div className="flex justify-end">
-                  <button
-                    type="button"
-                    onClick={() => setIsModalOpen(false)}
-                    className="mr-2 text-gray-600 hover:text-gray-800"
-                  >
-                    Cancel
-                  </button>
-                  <button type="submit" className="bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700">
-                    Recharge
-                  </button>
-                </div>
-              </form>
+              {modalPurpose === 'wallet' ? (
+                <>
+                  <h3 className="text-lg font-semibold mb-4">Recharge Wallet</h3>
+                  <form onSubmit={handleRechargeSubmit}>
+                    <input
+                      type="number"
+                      value={rechargeAmount}
+                      onChange={(e) => setRechargeAmount(e.target.value)}
+                      className="border border-gray-300 p-2 rounded w-full mb-4"
+                      placeholder="Enter amount"
+                      required
+                    />
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => setModalPurpose('')}
+                        className="mr-2 text-gray-600 hover:text-gray-800"
+                      >
+                        Cancel
+                      </button>
+                      <button type="submit" className="bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700">
+                        Recharge
+                      </button>
+                    </div>
+                  </form>
+                </>
+              ) : (
+                <>
+                  <h3 className="text-lg font-semibold mb-4">Update License Plate</h3>
+                  <form onSubmit={handleUpdatePlateSubmit}>
+                    <input
+                      type="text"
+                      value={licensePlate}
+                      onChange={(e) => setLicensePlate(e.target.value)}
+                      placeholder="Enter plate number"
+                      className="border border-gray-300 p-2 rounded w-full mb-4"
+                      required
+                    />
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => setModalPurpose('')}
+                        className="mr-2 text-gray-600 hover:text-gray-800"
+                      >
+                        Cancel
+                      </button>
+                      <button type="submit" className="bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700">
+                        Update Plate
+                      </button>
+                    </div>
+                  </form>
+                </>
+              )}
             </div>
           </div>
         )}
