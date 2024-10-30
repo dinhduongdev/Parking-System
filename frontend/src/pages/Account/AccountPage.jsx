@@ -8,15 +8,8 @@ const AccountPage = () => {
   const [licensePlate, setLicensePlate] = useState('');
   const [modalPurpose, setModalPurpose] = useState('');
   const [qrCodes, setQrCodes] = useState([]);
-  const currentHour = new Date().getHours();
-  let serviceFee
 
-  if (currentHour >= 7 && currentHour < 17) {
-    serviceFee = 5000;
-  } else {
-    serviceFee = 10000;
-  }
-  console.log(currentHour);
+
   
   // let serviceFee = (currentHour >= 7 && currentHour < 17) ? 5000 : 10000;
   // let previousMoney = user.balance
@@ -37,7 +30,9 @@ const AccountPage = () => {
         .catch(error => {
           console.error('Error fetching user:', error);
         });
+      
     }
+    
   }, []);
 
   const handleLogout = () => {
@@ -121,80 +116,69 @@ const AccountPage = () => {
     minute: '2-digit',
     second: '2-digit',
     hour12: false // Set to true for 12-hour format
-}).format(new Date());
+  }).format(new Date());
 
-  const handleCreateQR = async (e) => {
-    e.preventDefault();
+  // Function to fetch existing QR codes when the component mounts
+  const fetchQrCodes = async () => {
     try {
-        const response = await fetch(`http://127.0.0.1:5000/generate_qr?username=${encodeURIComponent(user.username)}&date=${encodeURIComponent(dateInVietnam)}`, {
+        const response = await fetch(`http://127.0.0.1:5000/get_qr_codes?username=${encodeURIComponent(user.username)}`, {
             method: 'GET',
-            headers: {
-                'Content-Type': 'application/json',
-            },
+            headers: { 'Content-Type': 'application/json' },
         });
-        
+
         if (!response.ok) {
-            throw new Error(`HTTP error! Status: ${response.status}`);
+            throw new Error(`Failed to fetch QR codes. Status: ${response.status}`);
         }
 
         const result = await response.json();
-        console.log(result); // Kiểm tra thông tin trả về từ server
-        
-        // Deduct $10 from the wallet
-        const rechargeResponse = await fetch('http://127.0.0.1:5000/account/vallet', {
-          method: 'POST',
-          headers: {
-              'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ 
-              username: user.username,
-              amount: -10,  // Deduct $10
-          }),
-        });
-
-        if (!rechargeResponse.ok) {
-            throw new Error("Failed to deduct amount from wallet");
-        }
-        const updatedUser = await rechargeResponse.json(); // Process updated user data
-        console.log("updatedUser",updatedUser);
-        
-        setUser(updatedUser); // Update state with new user data
-        // Gọi lại để lấy danh sách QR code
-        await fetchQRs();
-
+        setQrCodes(result.qrCodes || []); // Assume response contains a qrCodes array
     } catch (error) {
+        console.error(error);
         alert(error.message);
     }
-};
+  };
 
-const fetchQRs = async () => {
-    try {
-        const response = await fetch(`http://127.0.0.1:5000/get_qrs`, {
-            method: 'GET',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-        });
-        
-        if (!response.ok) {
-            throw new Error(`HTTP error! Status: ${response.status}`);
-        }
+  // useEffect(() => {
+  //     fetchQrCodes(); // Fetch QR codes when component mounts
+  // }, []);
 
-        const qrList = await response.json();
-        console.log(qrList); // Hiển thị danh sách QR codes
-        // Thực hiện cập nhật state hoặc render lại giao diện với danh sách QR codes
-        setQrCodes(qrList); // Lưu danh sách QR codes vào state
-    } catch (error) {
-        alert(error.message);
-    }
+  const handleCreateQR = async (e) => {
+      e.preventDefault();
+      try {
+          const response = await fetch(`http://127.0.0.1:5000/generate_qr?username=${encodeURIComponent(user.username)}&date=${encodeURIComponent(dateInVietnam)}`, {
+              method: 'GET',
+              headers: { 'Content-Type': 'application/json' },
+          });
+          
+          if (!response.ok) {
+              throw new Error(`Failed to generate QR code. Status: ${response.status}`);
+          }
+          
+          const result = await response.json();
+          console.log(result); // Check the information returned from the server
 
-};
+          // Deduct $10 from the wallet
+          const rechargeResponse = await fetch('http://127.0.0.1:5000/account/vallet', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ username: user.username, amount: -10 }),
+          });
 
-// Gọi hàm fetchQRs khi component mount để hiển thị danh sách QR codes đã lưu
-useEffect(() => {
-    fetchQRs();
-}, []);
+          if (!rechargeResponse.ok) {
+              throw new Error("Failed to deduct amount from wallet");
+          }
 
+          const updatedUser = await rechargeResponse.json();
+          setUser(updatedUser);  // Update user data
+          
+          // Fetch the updated list of QR codes
+          fetchQrCodes();
+
+      } catch (error) {
+          console.error(error); // Log error for monitoring
+          alert(error.message);
+      }
+  };
 
   return (
     <div className="min-h-screen flex bg-gray-100">
@@ -253,24 +237,31 @@ useEffect(() => {
         </section>
         <section className="mt-6 p-4 bg-white shadow rounded">
           <div>
-            <button 
-              onClick={handleCreateQR}
-              className="mt-4 bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700"
-            >Create</button>
-            <ul>
-                {qrCodes.map(qr => (
-                    <li key={qr.qr_id}>
-                        Username: {qr.username}, Date: {qr.date}
-                        <p>Gio vao: {currentHour}</p>
-                         {/* <p>Tiền lúc đầu {previousMoney}</p> */}
-                        <p>Phí dịch vụ {serviceFee}</p> 
-                        <p>Tiền lúc đầu {user.balance}</p>
-                        <img src={`http://127.0.0.1:5000/qr_image/${qr.qr_id}`} alt={`QR for ${qr.username}`} />
-                    </li>
-                ))}
-            </ul>
-          </div>
+              <form onSubmit={handleCreateQR}>
+                  {/* Your form inputs here */}
+                  <button 
+                    type="submit"
+                    className="mt-4 bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700"
+                    >Generate QR Code</button>
+              </form>
 
+              <h2>Previous QR Codes:</h2>
+              <ul>
+                  {qrCodes.map((qr, index) => (
+                      <li key={index}>
+                          {/* Render the QR code here; assuming qr contains a 'code' property */}
+                          {/* <img src={qr.code} alt={`QR Code ${index + 1}`} /> */}
+                          <p>Time: {qr.date}</p>
+                          <img 
+                            src={`data:image/png;base64,${qr.qr_image}`} alt={`QR Code ${index + 1}`}
+                            style={{ width: '150px', height: '150px' }} 
+                            
+                            />
+
+                      </li>
+                  ))}
+              </ul>
+          </div>
         </section>
 
 

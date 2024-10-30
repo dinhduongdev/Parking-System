@@ -11,6 +11,7 @@ from gridfs import GridFS
 from datetime import datetime
 from bson import ObjectId, Binary
 from flask import send_file
+import base64
 app = Flask(__name__)
 
 
@@ -189,10 +190,8 @@ def update_license_plate():
 def generate_qr_code():
     username = request.args.get('username')
     date = request.args.get('date')
-
     if not username or not date:
         return jsonify({"error": "Username and date are required"}), 400
-
     try:
         # Generate QR code
         qr_data = f"Username: {username}\nDate: {date}"
@@ -200,47 +199,66 @@ def generate_qr_code():
         img_io = BytesIO()
         qr.save(img_io, 'PNG')
         img_io.seek(0)
-        
-        # Store QR code in the 'data' collection
-        qr_id = data_collection.insert_one({
-            "username": username,
+        # Tạo dữ liệu QR code
+        qr_data = {
             "date": date,
-            "qr_image": Binary(img_io.getvalue()),  # Store image as binary data
+            "qr_image": Binary(img_io.getvalue()),  # Lưu ảnh dưới dạng dữ liệu nhị phân
             "created_at": datetime.utcnow()
-        }).inserted_id
-
-        return jsonify({"message": "QR code generated and saved", "qr_id": str(qr_id)}), 200
-
+        }
+        # Cập nhật tài liệu cho người dùng với tên đăng nhập
+        data_collection.update_one(
+            {"username": username},  # Tìm kiếm tài liệu theo username
+            {"$push": {"qr_codes": qr_data}},  # Thêm dữ liệu QR code vào mảng qr_codes
+            upsert=True  # Tạo tài liệu mới nếu không tìm thấy
+        )
+        return jsonify({"message": "QR code generated and saved"}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route('/get_qrs', methods=['GET'])
-def get_all_qrs():
+@app.route('/get_qr_codes', methods=['GET'])
+def get_qr_codes():
+    username = request.args.get('username')
+
+    if not username:
+        return jsonify({"error": "Username is required"}), 400
+
+    user_data = data_collection.find_one({"username": username}, {"_id": 0, "qr_codes": 1})
+
+    if not user_data or "qr_codes" not in user_data:
+        return jsonify({"qrCodes": []})  # Return empty list if no QR codes found
+
+    # Decode binary images to base64 for client-side rendering
+    qr_codes = [
+        {
+            "date": qr["date"], "qr_image": base64.b64encode(qr["qr_image"]).decode('utf-8')
+        }
+        for qr in user_data["qr_codes"]]
+    
+    return jsonify({"qrCodes": qr_codes})
+
+
+
+@app.route('/qr_image/<collection>/<qr_id>', methods=['GET'])
+def get_qr_image(collection, qr_id):
     try:
-        # Retrieve all QR code records from the 'data' collection
-        qr_records = data_collection.find()
-        qr_list = [{"qr_id": str(qr["_id"]), "username": qr["username"], "date": qr["date"]} for qr in qr_records]
-
-        return jsonify(qr_list), 200
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-@app.route('/qr_image/<qr_id>', methods=['GET'])
-def get_qr_image(qr_id):
-    try:
-        # Retrieve QR code binary data by ID
-        qr_record = data_collection.find_one({"_id": ObjectId(qr_id)})
+        # Lấy collection dựa trên tên `username`
+        user_collection = mongo.db[collection]
+        
+        # Lấy mã QR bằng ID từ collection đó
+        qr_record = user_collection.find_one({"_id": ObjectId(qr_id)})
+        
         if not qr_record:
             return jsonify({"error": "QR code not found"}), 404
 
-        # Send the QR code image as a file
+        # Gửi ảnh QR dưới dạng file
         img_io = BytesIO(qr_record["qr_image"])
         img_io.seek(0)
         return send_file(img_io, mimetype='image/png')
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
 
 
 if __name__ == "__main__": 
