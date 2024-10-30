@@ -5,17 +5,29 @@ from flask_bcrypt import Bcrypt
 from bson import ObjectId
 import os
 from flask_cors import CORS
-
-
+import qrcode
+from io import BytesIO
+from gridfs import GridFS 
+from datetime import datetime
+from bson import ObjectId, Binary
+from flask import send_file
 app = Flask(__name__)
+
+
+
 app.config["MONGO_URI"] = "mongodb://localhost:27017/GiaiPhapPhanMem"  # Update with your MongoDB URI
 mongo = PyMongo(app)
 bcrypt = Bcrypt(app)
 CORS(app)
+
+
+
+# GridFS for handling file storage
+fs = GridFS(mongo.db)
 # MongoDB Collection
 users = mongo.db.User
 
-
+data_collection = mongo.db.data
 
 # Route to register user
 @app.route('/register', methods=['POST'])
@@ -59,6 +71,26 @@ def login():
     else:
         return jsonify({"error": "Invalid email or password"}), 401
 
+
+def get_user_by_id(user_id):
+    try:
+        user = users.find_one({"_id": ObjectId(user_id)})  # Use ObjectId for MongoDB ID
+        if user:
+            user['_id'] = str(user['_id'])  # Convert ObjectId to string
+            return user
+        return None
+    except Exception as e:
+        print(f"Error fetching user: {e}")
+        return None
+
+@app.route('/user', methods=['GET'])
+def get_user():
+    user_id = request.args.get('id')  # Get user ID from query parameters
+    user = get_user_by_id(user_id)    # Fetch user from database
+    if user:
+        return jsonify(user), 200
+    return jsonify({'error': 'User not found'}), 404
+
 @app.route('/account/vallet', methods=['POST'])
 def recharge_wallet():
     try:
@@ -71,8 +103,8 @@ def recharge_wallet():
         print(f"Received username: {username}, amount: {amount}")
 
         # Validate input
-        if not isinstance(amount, (int, float)) or username is None or amount <= 0:
-            return jsonify({"error": "Invalid username or amount"}), 400
+        # if not isinstance(amount, (int, float)) or username is None or amount <= 0:
+        #     return jsonify({"error": "Invalid username or amount"}), 400
 
         # Find the user in the database by username
         user = users.find_one({"username": username})
@@ -91,7 +123,7 @@ def recharge_wallet():
                 return jsonify({"error": "Balance update failed"}), 500
 
             # Fetch the updated user data
-            updated_user = users.find_one({"username": username}, {"_id": 0, "username": 1, "balance": 1})
+            updated_user = users.find_one({"username": username}, {"_id": 0, "username": 1, "balance": 1, "license_plate": 1})
             return jsonify(updated_user), 200
         else:
             return jsonify({"error": "User not found"}), 404
@@ -152,6 +184,63 @@ def update_license_plate():
         "balance": updated_user.get("balance", 0),
         "license_plate": updated_user["license_plate"],
     })
+
+@app.route('/generate_qr', methods=['GET'])
+def generate_qr_code():
+    username = request.args.get('username')
+    date = request.args.get('date')
+
+    if not username or not date:
+        return jsonify({"error": "Username and date are required"}), 400
+
+    try:
+        # Generate QR code
+        qr_data = f"Username: {username}\nDate: {date}"
+        qr = qrcode.make(qr_data)
+        img_io = BytesIO()
+        qr.save(img_io, 'PNG')
+        img_io.seek(0)
+        
+        # Store QR code in the 'data' collection
+        qr_id = data_collection.insert_one({
+            "username": username,
+            "date": date,
+            "qr_image": Binary(img_io.getvalue()),  # Store image as binary data
+            "created_at": datetime.utcnow()
+        }).inserted_id
+
+        return jsonify({"message": "QR code generated and saved", "qr_id": str(qr_id)}), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/get_qrs', methods=['GET'])
+def get_all_qrs():
+    try:
+        # Retrieve all QR code records from the 'data' collection
+        qr_records = data_collection.find()
+        qr_list = [{"qr_id": str(qr["_id"]), "username": qr["username"], "date": qr["date"]} for qr in qr_records]
+
+        return jsonify(qr_list), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/qr_image/<qr_id>', methods=['GET'])
+def get_qr_image(qr_id):
+    try:
+        # Retrieve QR code binary data by ID
+        qr_record = data_collection.find_one({"_id": ObjectId(qr_id)})
+        if not qr_record:
+            return jsonify({"error": "QR code not found"}), 404
+
+        # Send the QR code image as a file
+        img_io = BytesIO(qr_record["qr_image"])
+        img_io.seek(0)
+        return send_file(img_io, mimetype='image/png')
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 if __name__ == "__main__": 

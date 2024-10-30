@@ -7,11 +7,36 @@ const AccountPage = () => {
   const [rechargeAmount, setRechargeAmount] = useState('');
   const [licensePlate, setLicensePlate] = useState('');
   const [modalPurpose, setModalPurpose] = useState('');
+  const [qrCodes, setQrCodes] = useState([]);
+  const currentHour = new Date().getHours();
+  let serviceFee
 
+  if (currentHour >= 7 && currentHour < 17) {
+    serviceFee = 5000;
+  } else {
+    serviceFee = 10000;
+  }
+  console.log(currentHour);
+  
+  // let serviceFee = (currentHour >= 7 && currentHour < 17) ? 5000 : 10000;
+  // let previousMoney = user.balance
   useEffect(() => {
     const storedUser = localStorage.getItem('user');
     if (storedUser) {
-      setUser(JSON.parse(storedUser));
+      const userData = JSON.parse(storedUser);
+      fetch(`http://127.0.0.1:5000/user?id=${userData.user_id}`)
+        .then(response => {
+          if (!response.ok) {
+            throw new Error('Network response was not ok');
+          }
+          return response.json();
+        })
+        .then(data => {
+          setUser(data); // Set the real user data
+        })
+        .catch(error => {
+          console.error('Error fetching user:', error);
+        });
     }
   }, []);
 
@@ -46,6 +71,8 @@ const AccountPage = () => {
       if (!response.ok) {
         throw new Error("Failed to recharge wallet");
       }
+
+      
 
       const updatedUser = await response.json();
       setUser(updatedUser);
@@ -85,6 +112,89 @@ const AccountPage = () => {
       alert(error.message);
     }
   };
+  const dateInVietnam = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false // Set to true for 12-hour format
+}).format(new Date());
+
+  const handleCreateQR = async (e) => {
+    e.preventDefault();
+    try {
+        const response = await fetch(`http://127.0.0.1:5000/generate_qr?username=${encodeURIComponent(user.username)}&date=${encodeURIComponent(dateInVietnam)}`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! Status: ${response.status}`);
+        }
+
+        const result = await response.json();
+        console.log(result); // Kiểm tra thông tin trả về từ server
+        
+        // Deduct $10 from the wallet
+        const rechargeResponse = await fetch('http://127.0.0.1:5000/account/vallet', {
+          method: 'POST',
+          headers: {
+              'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ 
+              username: user.username,
+              amount: -10,  // Deduct $10
+          }),
+        });
+
+        if (!rechargeResponse.ok) {
+            throw new Error("Failed to deduct amount from wallet");
+        }
+        const updatedUser = await rechargeResponse.json(); // Process updated user data
+        console.log("updatedUser",updatedUser);
+        
+        setUser(updatedUser); // Update state with new user data
+        // Gọi lại để lấy danh sách QR code
+        await fetchQRs();
+
+    } catch (error) {
+        alert(error.message);
+    }
+};
+
+const fetchQRs = async () => {
+    try {
+        const response = await fetch(`http://127.0.0.1:5000/get_qrs`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! Status: ${response.status}`);
+        }
+
+        const qrList = await response.json();
+        console.log(qrList); // Hiển thị danh sách QR codes
+        // Thực hiện cập nhật state hoặc render lại giao diện với danh sách QR codes
+        setQrCodes(qrList); // Lưu danh sách QR codes vào state
+    } catch (error) {
+        alert(error.message);
+    }
+
+};
+
+// Gọi hàm fetchQRs khi component mount để hiển thị danh sách QR codes đã lưu
+useEffect(() => {
+    fetchQRs();
+}, []);
+
 
   return (
     <div className="min-h-screen flex bg-gray-100">
@@ -141,6 +251,28 @@ const AccountPage = () => {
             Update Plate
           </button>
         </section>
+        <section className="mt-6 p-4 bg-white shadow rounded">
+          <div>
+            <button 
+              onClick={handleCreateQR}
+              className="mt-4 bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700"
+            >Create</button>
+            <ul>
+                {qrCodes.map(qr => (
+                    <li key={qr.qr_id}>
+                        Username: {qr.username}, Date: {qr.date}
+                        <p>Gio vao: {currentHour}</p>
+                         {/* <p>Tiền lúc đầu {previousMoney}</p> */}
+                        <p>Phí dịch vụ {serviceFee}</p> 
+                        <p>Tiền lúc đầu {user.balance}</p>
+                        <img src={`http://127.0.0.1:5000/qr_image/${qr.qr_id}`} alt={`QR for ${qr.username}`} />
+                    </li>
+                ))}
+            </ul>
+          </div>
+
+        </section>
+
 
         {/* Modal */}
         {modalPurpose && (
