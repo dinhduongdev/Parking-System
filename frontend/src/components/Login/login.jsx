@@ -1,10 +1,10 @@
-import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 
 const Login = () => {
   const [formData, setFormData] = useState({
-    email: '',
-    password: '',
+    email: "",
+    password: "",
   });
   const navigate = useNavigate();
 
@@ -15,10 +15,10 @@ const Login = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    const response = await fetch('http://127.0.0.1:5000/login', {
-      method: 'POST',
+    const response = await fetch("http://127.0.0.1:5000/login", {
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
       body: JSON.stringify({
         email: formData.email,
@@ -29,11 +29,11 @@ const Login = () => {
     if (response.ok) {
       const userData = await response.json();
       console.log(userData);
-      
-      alert('Login successful!');
-      localStorage.setItem('user', JSON.stringify(userData));  // Store user data
-      localStorage.setItem('username', userData.username); // Store username
-      navigate('/'); // Redirect to a dashboard or home page after login
+
+      alert("Login successful!");
+      localStorage.setItem("user", JSON.stringify(userData)); // Store user data
+      localStorage.setItem("username", userData.username); // Store username
+      navigate("/"); // Redirect to a dashboard or home page after login
     } else {
       const errorData = await response.json();
       alert(errorData.error);
@@ -46,7 +46,9 @@ const Login = () => {
         <h2 className="text-2xl font-bold mb-6 text-center">Login</h2>
         <form onSubmit={handleSubmit}>
           <div className="mb-4">
-            <label htmlFor="email" className="block text-sm font-semibold mb-1">Email</label>
+            <label htmlFor="email" className="block text-sm font-semibold mb-1">
+              Email
+            </label>
             <input
               type="email"
               id="email"
@@ -58,7 +60,12 @@ const Login = () => {
             />
           </div>
           <div className="mb-6">
-            <label htmlFor="password" className="block text-sm font-semibold mb-1">Password</label>
+            <label
+              htmlFor="password"
+              className="block text-sm font-semibold mb-1"
+            >
+              Password
+            </label>
             <input
               type="password"
               id="password"
@@ -78,7 +85,10 @@ const Login = () => {
         </form>
         <p className="mt-4 text-sm text-center">
           Don not have an account?
-          <Link to="/register" className="text-blue-500 hover:underline"> Register</Link>
+          <Link to="/register" className="text-blue-500 hover:underline">
+            {" "}
+            Register
+          </Link>
         </p>
       </div>
     </div>
