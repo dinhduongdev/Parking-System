@@ -49,12 +49,12 @@ class Camera(ABC):
         self.__camera = Stream(url, delay)
         self.__frame_queue = Queue(maxsize=1)
         self.__event = Event()
-        self.detected_plates = ""
         self.img = self.__camera.capture()
         self.title = title
         self.is_running = False
         self.display_thread = Thread(target=self.display, daemon=True)
         self.process_thread = Thread(target=self.process, daemon=True)
+        self.label = ""
 
     @property
     def frame_queue(self):
@@ -71,6 +71,10 @@ class Camera(ABC):
     @property
     def delay(self):
         return self.__camera.delay
+
+    @property
+    def delay_ms(self):
+        return int(self.delay * 1000)
 
     def display(self):
         # Keep capturing the frame and display it
@@ -123,6 +127,7 @@ class CameraIn(Camera):
 
     def __init__(self, url, title, delay=0.5):
         super().__init__(url, title, delay)
+        self.detected_plates = ""
 
     def process(self):
         """
@@ -138,6 +143,8 @@ class CameraIn(Camera):
             if self.event.is_set():
                 self.event.clear()
                 time.sleep(Camera.TIME_TO_PASS)
+                self.detected_plates = ""
+                self.label = ""
                 continue
             # Get the frame from the queue
             try:
@@ -149,6 +156,7 @@ class CameraIn(Camera):
             curr_plates.extend(detect_and_read_plate(img))
             if len(curr_plates) == Camera.MAX_TRY:
                 self.detected_plates = most_common_plate(curr_plates)
+                self.label = self.detected_plates
                 print(
                     f"({self.title}) Detected plates: {self.detected_plates} {curr_plates}"
                 )
@@ -160,13 +168,10 @@ class CameraIn(Camera):
                     print("User not found")
                 elif user["balance"] < 10:
                     print("Insufficient balance")
-                    break
                 else:
                     self.event.set()
                     CameraIn.create_qr_code(user["username"])
                 curr_plates.clear()
-
-        self.stop()
 
     @staticmethod
     def get_user_of_plate(plate):
@@ -193,87 +198,91 @@ class CameraIn(Camera):
         print(f"{response.status_code} {response.text}")
 
 
-class CameraOut(Camera):
-    def __init__(self, url, title, delay=0.5):
+class CameraQR(Camera):
+    def __init__(self, url, title, delay=0.5, shared_qr_data=None):
         super().__init__(url, title, delay)
-        detector = cv2.QRCodeDetector()
+        self.detector = cv2.QRCodeDetector()
+        self.shared_qr_data = shared_qr_data
+
+    def process(self):
+        while self.is_running:
+            if self.event.is_set():
+                time.sleep(self.delay)
+                continue
+            # Get the frame from the queue
+            try:
+                img = self.frame_queue.get(timeout=Camera.TIME_TO_PASS + 2)
+            except:
+                print(f"No frame received {self.title}")
+                continue
+            print("Detecting...", self.title)
+
+            data, bbox, _ = self.detector.detectAndDecode(img)
+            if data:
+                parts = data.split()
+                username = parts[0].split(":")[1]
+                uuid = parts[1].split(":")[1]
+                print(f"================{username} {uuid}===============")
+                self.shared_qr_data["qr_data"] = requests.get(
+                    f"http://localhost:5000/get_qr_data?uuid={uuid}&username={username}"
+                ).json()
+                self.label = uuid
+                print(f"QR detected: {self.shared_qr_data['qr_data']}")
+
+
+class CameraOut(Camera):
+    def __init__(self, url, title, delay=0.5, shared_qr_data=None):
+        super().__init__(url, title, delay)
+        self.shared_qr_data = shared_qr_data
 
     def process(self):
         """
         This only detects only when the qrcode is detected
         1. Detect the license plate
         2. Check if the license plate is match with the user's plate of the qr code
-        3. If match, open the gate and sleep for 5 seconds, post the check out time to the server
-        4. Repeat the process
+        4. If true, open the gate and sleep for 5 seconds, post the check out time to the server
+        5. Repeat the process
         """
         curr_plates = []
         while self.is_running:
-            if self.__event.is_set():
+            if self.event.is_set():
+                self.event.clear()
                 time.sleep(Camera.TIME_TO_PASS)
+                self.detected_plates = ""
+                self.label = ""
                 continue
             # Get the frame from the queue
             try:
-                img = self.__frame_queue.get(timeout=Camera.TIME_TO_PASS + 3)
+                img = self.frame_queue.get(timeout=Camera.TIME_TO_PASS + 2)
             except:
-                print(f"No frame received {self.title}. Shut down...")
-                break
+                print(f"No frame received {self.title}")
+                continue
             print("Detecting...", self.title)
             curr_plates.extend(detect_and_read_plate(img))
             if len(curr_plates) == Camera.MAX_TRY:
                 self.detected_plates = most_common_plate(curr_plates)
+                self.label = self.detected_plates
                 print(
                     f"({self.title}) Detected plates: {self.detected_plates} {curr_plates}"
                 )
-                curr_plates.clear()
 
-                # Check if the plate is registered
-                # If registered, user's balance is enough open the gate and sleep for 5 seconds, request for create qr code
-                user = CameraIn.get_user_of_plate(self.detected_plates)
-                if user is None:
-                    print("User not found")
-                elif user["balance"] < 10:
-                    print("Insufficient balance")
+                # Check if the license plate is match with the user's plate of the qr code
+                # If match, open the gate and sleep for 5 seconds, post the check out time to the server
+                if (
+                    self.detected_plates
+                    != self.shared_qr_data["qr_data"]["license_plate"]
+                ):
+                    print("License plate does not match")
+                elif self.shared_qr_data["qr_data"]["checkout_date"] != "":
+                    print("User already checked out")
                 else:
-                    self.__event.set()
-                    CameraIn.create_qr_code(user["username"])
-
-        self.stop()
-
-
-class CameraQR(Camera):
-    def __init__(self, url, title, delay=0.5):
-        super().__init__(url, title, delay)
-
-    def process(self):
-        curr_plates = []
-        while self.is_running:
-            if self.__event.is_set():
-                time.sleep(Camera.TIME_TO_PASS)
-                continue
-            # Get the frame from the queue
-            try:
-                img = self.__frame_queue.get(timeout=Camera.TIME_TO_PASS + 3)
-            except:
-                print(f"No frame received {self.title}. Shut down...")
-                break
-            print("Detecting...", self.title)
-            curr_plates.extend(detect_and_read_plate(img))
-            if len(curr_plates) == Camera.MAX_TRY:
-                self.detected_plates = most_common_plate(curr_plates)
-                print(
-                    f"({self.title}) Detected plates: {self.detected_plates} {curr_plates}"
-                )
+                    self.event.set()
+                    response = requests.post(
+                        "http://localhost:5000/checkout",
+                        json={
+                            "username": self.shared_qr_data["qr_data"]["username"],
+                            "uuid": self.shared_qr_data["qr_data"]["uuid"],
+                        },
+                    )
+                    print(f"{response.status_code} {response.text}")
                 curr_plates.clear()
-
-                # Check if the plate is registered
-                # If registered, user's balance is enough open the gate and sleep for 5 seconds, request for create qr code
-                user = CameraIn.get_user_of_plate(self.detected_plates)
-                if user is None:
-                    print("User not found")
-                elif user["balance"] < 10:
-                    print("Insufficient balance")
-                else:
-                    self.__event.set()
-                    CameraIn.create_qr_code(user["username"])
-
-        self.stop()

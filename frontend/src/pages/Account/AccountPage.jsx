@@ -191,6 +191,17 @@ const AccountPage = () => {
     }
   };
 
+  const handleSeeHistory = async (event) => {
+    event.preventDefault(); // Prevent the default form submission
+
+    try {
+      await fetchQrCodes(); // Call fetchQrCodes to get the history of QR codes
+    } catch (error) {
+      console.error("Error fetching QR code history:", error);
+      alert("Failed to fetch QR code history.");
+    }
+  };
+
   return (
     <div className="min-h-screen flex bg-gray-100">
       {/* Sidebar */}
@@ -285,30 +296,31 @@ const AccountPage = () => {
         </section>
         <section className="mt-6 p-4 bg-white shadow rounded">
           <div>
-            <form onSubmit={handleCreateQR}>
+            <form onSubmit={handleSeeHistory}>
               {/* Your form inputs here */}
               <button
                 type="submit"
                 className="mt-4 bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700"
               >
-                Generate QR Code
+                See History
               </button>
             </form>
 
             <h2>Previous QR Codes:</h2>
-            <ul>
-              {qrCodes.map((qr, index) => (
-                <li key={index}>
-                  {/* Render the QR code here; assuming qr contains a 'code' property */}
-                  {/* <img src={qr.code} alt={`QR Code ${index + 1}`} /> */}
-                  <p>Time: {qr.date}</p>
-                  <img
-                    src={`data:image/png;base64,${qr.qr_image}`}
-                    alt={`QR Code ${index + 1}`}
-                    style={{ width: "150px", height: "150px" }}
-                  />
-                </li>
-              ))}
+            <ul className="grid grid-cols-2 gap-4">
+              {qrCodes
+                .slice()
+                .reverse()
+                .map((qr, index) => (
+                  <li key={index} className="flex flex-col items-center">
+                    <p>Time: {qr.date}</p>
+                    <img
+                      src={`data:image/png;base64,${qr.qr_image}`}
+                      alt={`QR Code ${index + 1}`}
+                      className="w-36 h-36" // This sets the width and height to 150px
+                    />
+                  </li>
+                ))}
             </ul>
           </div>
         </section>

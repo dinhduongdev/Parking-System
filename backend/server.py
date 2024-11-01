@@ -3,7 +3,7 @@ from flask import Flask, request, jsonify
 from flask_pymongo import PyMongo
 from flask_bcrypt import Bcrypt
 from bson import ObjectId
-import os
+import uuid
 from flask_cors import CORS
 import qrcode
 from io import BytesIO
@@ -12,6 +12,7 @@ from datetime import datetime
 from bson import ObjectId, Binary
 from flask import send_file
 import base64
+import time
 
 app = Flask(__name__)
 
@@ -255,25 +256,88 @@ def get_user_of_plate():
     )
 
 
+@app.route("/checkout", methods=["POST"])
+def checkout():
+    username = request.json.get("username")
+    qr_uuid = request.json.get("uuid")
+    print(username, qr_uuid)
+
+    if not username or not qr_uuid:
+        return jsonify({"error": "Username and UUID are required"}), 400
+
+    result = data_collection.update_one(
+        {"username": username, "qr_codes.uuid": qr_uuid},
+        {"$set": {"qr_codes.$.checkout_date": time.strftime("%d/%m/%Y, %H:%M:%S")}},
+    )
+
+    if result.matched_count == 0:
+        return jsonify({"error": "QR code not found"}), 404
+
+    return jsonify({"message": "Checkout date updated successfully"}), 200
+
+
+def get_plate_of_user(username):
+    user = users.find_one({"username": username})
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+    return user["license_plate"]
+
+
+@app.route("/get_qr_data", methods=["GET"])
+def get_qr_data():
+    username = request.args.get("username")
+    qr_uuid = request.args.get("uuid")
+
+    if not username or not qr_uuid:
+        return jsonify({"error": "Username and UUID are required"}), 400
+
+    user = data_collection.find_one(
+        {"username": username, "qr_codes.uuid": qr_uuid}, {"qr_codes.$": 1}
+    )
+    if not user or "qr_codes" not in user:
+        return jsonify({"error": "QR code not found"}), 404
+
+    qr_data = user["qr_codes"][0]
+    return (
+        jsonify(
+            {
+                "username": username,
+                "uuid": qr_data["uuid"],
+                "date": qr_data["date"],
+                "created_at": qr_data["created_at"],
+                "checkout_date": qr_data["checkout_date"],
+                "license_plate": qr_data["license_plate"],
+            }
+        ),
+        200,
+    )
+
+
 @app.route("/generate_qr", methods=["GET"])
 def generate_qr_code():
     username = request.args.get("username")
     date = request.args.get("date")
+    license_plate = get_plate_of_user(username)
     if not username or not date:
         return jsonify({"error": "Username and date are required"}), 400
     try:
+        # Generate UUID for the QR code
+        qr_uuid = str(uuid.uuid4())
+
         # Generate QR code
-        qr_data = f"Username: {username}\nDate: {date}"
+        qr_data = f"Username:{username}\nUUID:{qr_uuid}"
         qr = qrcode.make(qr_data)
         img_io = BytesIO()
         qr.save(img_io, "PNG")
         img_io.seek(0)
         # Tạo dữ liệu QR code
         qr_data = {
+            "uuid": qr_uuid,
             "date": date,
             "qr_image": Binary(img_io.getvalue()),  # Lưu ảnh dưới dạng dữ liệu nhị phân
             "created_at": datetime.utcnow(),
             "checkout_date": "",
+            "license_plate": license_plate,
         }
         # Cập nhật tài liệu cho người dùng với tên đăng nhập
         data_collection.update_one(
