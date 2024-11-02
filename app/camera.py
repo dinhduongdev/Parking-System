@@ -167,10 +167,18 @@ class CameraIn(Camera):
                 if user is None:
                     print("User not found")
                 elif user["balance"] < 10:
-                    print("Insufficient balance")
+                    with open("log/checkin.txt", "a") as f:
+                        f.write(
+                            f"[{time.strftime('%d/%m/%Y, %H:%M:%S')}]: {user['username']} {self.detected_plates} doesn't have enough money.\n\n"
+                        )
                 else:
                     self.event.set()
                     CameraIn.create_qr_code(user["username"])
+                    # Write logs
+                    with open("log/checkin.txt", "a") as f:
+                        f.write(
+                            f"[{time.strftime('%d/%m/%Y, %H:%M:%S')}]: {user['username']} {self.detected_plates}\n\n"
+                        )
                 curr_plates.clear()
 
     @staticmethod
@@ -273,8 +281,12 @@ class CameraOut(Camera):
                     != self.shared_qr_data["qr_data"]["license_plate"]
                 ):
                     print("License plate does not match")
+                # Check if the user already checked out
                 elif self.shared_qr_data["qr_data"]["checkout_date"] != "":
-                    print("User already checked out")
+                    with open("log/checkout.txt", "a") as f:
+                        f.write(
+                            f"QR: {self.shared_qr_data['qr_data']['uuid']} has been used!!!\n\n"
+                        )
                 else:
                     self.event.set()
                     response = requests.post(
@@ -285,4 +297,9 @@ class CameraOut(Camera):
                         },
                     )
                     print(f"{response.status_code} {response.text}")
+                    # Write logs
+                    with open("log/checkout.txt", "a") as f:
+                        f.write(
+                            f"[{time.strftime('%d/%m/%Y, %H:%M:%S')}]: {self.shared_qr_data['qr_data']['username']} {self.detected_plates}\nQR: {self.shared_qr_data['qr_data']['uuid']}\n\n"
+                        )
                 curr_plates.clear()
