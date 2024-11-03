@@ -6,6 +6,7 @@ import time
 from app.detector import detect_and_read_plate, most_common_plate
 from abc import ABC, abstractmethod
 import requests
+import json
 
 BLACK_IMG = np.zeros((480, 640, 3), dtype=np.uint8)
 
@@ -40,10 +41,20 @@ class Stream:
         if self.cap.isOpened():
             self.cap.release()
 
+    def retry(self):
+        for _ in range(Stream.MAX_TRY):
+            self.cap = cv2.VideoCapture(self.url)
+            if self.cap.isOpened():
+                self.is_available = True
+                break
+            self.is_available = False
+            print("Stream not available, retrying...")
+            time.sleep(Stream.TRY_TIMEOUT)
+
 
 class Camera(ABC):
     TIME_TO_PASS = 5
-    MAX_TRY = 2
+    MAX_TRY = 1
 
     def __init__(self, url, title, delay=0.5):
         self.__camera = Stream(url, delay)
@@ -90,8 +101,12 @@ class Camera(ABC):
 
             # The camera has been shut down suddenly
             if not self.is_available:
-                self.stop()
-                break
+                self.retry_stream()
+                if not self.is_available:
+                    self.stop()
+                    break
+                continue
+
             elif self.__frame_queue.full():
                 self.__frame_queue.get()
             self.__frame_queue.put(self.img)
@@ -99,6 +114,9 @@ class Camera(ABC):
             time.sleep(self.delay)
         self.__event.set()
         self.__camera.release()
+
+    def retry_stream(self):
+        self.__camera.retry()
 
     @abstractmethod
     def process(self):
@@ -165,8 +183,10 @@ class CameraIn(Camera):
                 # If registered, user's balance is enough open the gate and sleep for 5 seconds, request for create qr code
                 user = CameraIn.get_user_of_plate(self.detected_plates)
                 if user is None:
+                    self.label += f"\n(User not found)"
                     print("User not found")
                 elif user["balance"] < 10:
+                    self.label += f"\n{user['username']} doesn't have enough money. Balance: {user['balance']}"
                     with open("log/checkin.txt", "a") as f:
                         f.write(
                             f"[{time.strftime('%d/%m/%Y, %H:%M:%S')}]: {user['username']} {self.detected_plates} doesn't have enough money.\n\n"
@@ -174,6 +194,9 @@ class CameraIn(Camera):
                 else:
                     self.event.set()
                     CameraIn.create_qr_code(user["username"])
+                    self.label += (
+                        f'{user["username"]} {self.detected_plates} Check in success'
+                    )
                     # Write logs
                     with open("log/checkin.txt", "a") as f:
                         f.write(
@@ -234,7 +257,7 @@ class CameraQR(Camera):
                 self.shared_qr_data["qr_data"] = requests.get(
                     f"http://localhost:5000/get_qr_data?uuid={uuid}&username={username}"
                 ).json()
-                self.label = uuid
+                self.label = json.dumps(self.shared_qr_data["qr_data"], indent=2)
                 print(f"QR detected: {self.shared_qr_data['qr_data']}")
 
 
@@ -280,15 +303,18 @@ class CameraOut(Camera):
                     self.detected_plates
                     != self.shared_qr_data["qr_data"]["license_plate"]
                 ):
+                    self.label += f"\n(License plate does not match)"
                     print("License plate does not match")
                 # Check if the user already checked out
                 elif self.shared_qr_data["qr_data"]["checkout_date"] != "":
+                    self.label += f"\nThis QR has been used!!!"
                     with open("log/checkout.txt", "a") as f:
                         f.write(
                             f"QR: {self.shared_qr_data['qr_data']['uuid']} has been used!!!\n\n"
                         )
                 else:
                     self.event.set()
+                    self.label += f"Check out success"
                     response = requests.post(
                         "http://localhost:5000/checkout",
                         json={
