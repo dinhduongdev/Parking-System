@@ -37,7 +37,7 @@ class CameraPanel(tk.Frame):
             textvariable=self.label_text_var,
             width=50,
             height=10,
-            font=("Arial", 25, "bold"),
+            # font=("Arial", 25, "bold"),
         )
         self.log_text.pack()
 
@@ -61,7 +61,7 @@ class CameraPanel(tk.Frame):
         self.canvas.image = img
         if self.camera_thread.label != "":
             self.label_text_var.set(self.camera_thread.label)
-            self.camera_thread.resume()
+            # self.camera_thread.resume()
         self.after(self.delay_ms, self.display)
 
     def toggle_display(self):
@@ -88,33 +88,63 @@ class App(tk.Tk):
         self.title("Camera App")
         self.wm_state("zoomed")
 
-        in_camera = CameraIn(0, "Camera in")
-        self.panel1 = CameraPanel(self, in_camera)
-        self.panel1.pack(side=tk.LEFT, padx=10, pady=10)
+        # ================ Create camera-in panel ================
+        try:
+            in_camera = CameraIn("http://5.227.122.81:8080/video", "Camera in", 0.2)
+            self.panel1 = CameraPanel(self, in_camera)
+            self.panel1.pack(side=tk.LEFT, padx=10, pady=10)
+        except:
+            self.panel1 = None
+            print("Camera not found")
+        else:
+            in_panel_thread = Thread(target=self.panel1.run, daemon=True)
 
-        out_camera = CameraOut(1, "Camera out", shared_qr_data=self.shared_data)
-        self.panel2 = CameraPanel(self, out_camera)
-        self.panel2.pack(side=tk.RIGHT, padx=10, pady=10)
+        # ================ Create camera-out panel ================
+        try:
+            out_camera = CameraOut(
+                0,
+                "Camera out",
+                delay=0.2,
+                shared_qr_data=self.shared_data,
+            )
+            self.panel2 = CameraPanel(self, out_camera)
+            self.panel2.pack(side=tk.LEFT, padx=10, pady=10)
+        except:
+            self.panel2 = None
+            print("Camera not found")
+        else:
+            out_panel_thread = Thread(target=self.panel2.run, daemon=True)
 
-        qr_camera = CameraQR(
-            "https://192.168.1.11:8080/video",
-            "QR camera",
-            shared_qr_data=self.shared_data,
-        )
-        self.panel3 = CameraPanel(self, qr_camera)
-        self.panel3.pack(side=tk.LEFT, padx=10, pady=10)
+        # ================ Create camera-qr panel ================
+        try:
+            qr_camera = CameraQR(
+                "http://192.168.157.114:8080/video",
+                "QR camera",
+                delay=0.2,
+                shared_qr_data=self.shared_data,
+            )
+            self.panel3 = CameraPanel(self, qr_camera)
+            self.panel3.pack(side=tk.LEFT, padx=10, pady=10)
+        except:
+            self.panel3 = None
+            print("Camera not found")
+        else:
+            qr_panel_thread = Thread(target=self.panel3.run, daemon=True)
 
-        in_panel_thread = Thread(target=self.panel1.run, daemon=True)
-        out_panel_thread = Thread(target=self.panel2.run, daemon=True)
-        qr_panel_thread = Thread(target=self.panel3.run, daemon=True)
-        in_panel_thread.start()
-        out_panel_thread.start()
-        qr_panel_thread.start()
+        if self.panel1:
+            in_panel_thread.start()
+        if self.panel2:
+            out_panel_thread.start()
+        if self.panel3:
+            qr_panel_thread.start()
 
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
 
     def on_closing(self):
-        self.panel1.stop()
-        self.panel2.stop()
-        self.panel3.stop()
+        if self.panel1:
+            self.panel1.stop()
+        if self.panel2:
+            self.panel2.stop()
+        if self.panel3:
+            self.panel3.stop()
         self.destroy()

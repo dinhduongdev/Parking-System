@@ -306,14 +306,19 @@ const AccountPage = () => {
               </button>
             </form>
 
-            <h2>Previous QR Codes:</h2>
+            <h2>Latest QR Codes:</h2>
             <ul className="grid grid-cols-2 gap-4">
               {qrCodes
                 .slice()
                 .reverse()
                 .map((qr, index) => (
-                  <li key={index} className="flex flex-col items-center">
+                  <li
+                    key={index}
+                    className="flex flex-col items-center"
+                    style={{ opacity: qr.is_used ? 0.7 : 1 }}
+                  >
                     <p>Time: {qr.date}</p>
+                    <p>Plate: {qr.license_plate}</p>
                     <img
                       src={`data:image/png;base64,${qr.qr_image}`}
                       alt={`QR Code ${index + 1}`}

@@ -369,6 +369,8 @@ def get_qr_codes():
         {
             "date": qr["date"],
             "qr_image": base64.b64encode(qr["qr_image"]).decode("utf-8"),
+            "is_used": bool(qr["checkout_date"]),
+            "license_plate": qr["license_plate"],
         }
         for qr in user_data["qr_codes"]
     ]
